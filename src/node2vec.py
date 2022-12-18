@@ -1,26 +1,59 @@
 import numpy as np
 import networkx as nx
 import random
+from tqdm import tqdm
 
-
-class Graph():
-	def __init__(self, nx_G, is_directed, p, q):
+class Node2Vec():
+	def __init__(self, nx_G, is_directed, p, q, r, restarts, tau, omega, epsilon, s):
 		self.G = nx_G
 		self.is_directed = is_directed
 		self.p = p
 		self.q = q
+		
+		self.r = r
+
+		# Restart related hyperparameters
+		self.restarts = restarts
+		self.tau = tau
+		self.omega = omega
+		self.epsilon = epsilon
+		self.s = s
+
+	def fn_restart(self, degree):
+		'''
+		Compute restart probability based on degree
+		'''
+		return self.epsilon / (1 + np.exp((-1*degree) + self.omega*self.r)) + self.tau
+
+	def can_restart(self, len_walk, leftover):
+		'''
+		Only able to restart when there are sufficient no steps leftover and
+		the current walk has done a sufficient no steps. Both based on restarts_window
+		'''
+		return len_walk >= self.s and leftover >= self.s
 
 	def node2vec_walk(self, walk_length, start_node):
 		'''
 		Simulate a random walk starting from start node.
 		'''
+
 		G = self.G
 		alias_nodes = self.alias_nodes
 		alias_edges = self.alias_edges
 
-		walk = [start_node]
+		degree = G.degree(start_node)
+		p_restarts = self.fn_restart(degree)
 
-		while len(walk) < walk_length:
+		walks = []
+		walk = [start_node]
+		steps = 0
+
+		while steps < walk_length:
+			# Simulate restarts, independent of probabilities of edges
+			if self.restarts and self.can_restart(len(walk), walk_length-steps) and np.random.rand() <= p_restarts:
+				walks.append(walk)
+				walk = [start_node]
+
 			cur = walk[-1]
 			cur_nbrs = sorted(G.neighbors(cur))
 			if len(cur_nbrs) > 0:
@@ -33,8 +66,11 @@ class Graph():
 					walk.append(next)
 			else:
 				break
-
-		return walk
+			
+			steps += 1
+		
+		walks.append(walk)
+		return walks
 
 	def simulate_walks(self, num_walks, walk_length):
 		'''
@@ -43,12 +79,13 @@ class Graph():
 		G = self.G
 		walks = []
 		nodes = list(G.nodes())
-		print 'Walk iteration:'
-		for walk_iter in range(num_walks):
-			print str(walk_iter+1), '/', str(num_walks)
+		print('Walk iteration:')
+		for walk_iter in tqdm(range(num_walks)):
 			random.shuffle(nodes)
 			for node in nodes:
-				walks.append(self.node2vec_walk(walk_length=walk_length, start_node=node))
+				sim_walks = self.node2vec_walk(walk_length=walk_length, start_node=node)
+				for i in range(len(sim_walks)):
+					walks.append(sim_walks[i])
 
 		return walks
 

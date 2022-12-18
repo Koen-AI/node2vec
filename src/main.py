@@ -1,104 +1,145 @@
-'''
-Reference implementation of node2vec. 
+import os
+import datetime
+import json
+import pickle
+from command_line import parse_args
+from model import Model
+from plot_bayes_opt import plot_heatmap
+from sklearn.utils.estimator_checks import check_estimator
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import f1_score, recall_score, precision_score, accuracy_score
+from skopt import BayesSearchCV
+from skopt.space import Real, Integer
 
-Author: Aditya Grover
+def bayes_opt_pq(args, X_train, y_train, DIR):
+   opt = BayesSearchCV(
+      Model(r=args.r, d=args.d, l=args.l, k=args.k, restarts=args.restarts, \
+            tau=args.tau, omega=args.omega, epsilon=args.epsilon, s=args.s, \
+            weighted=args.weighted, directed=args.directed, epochs=args.epochs, \
+            nodes=args.input, dir_base=None),
+      {
+         'p': Real(0.2, 4, prior='log-uniform'),
+         'q': Real(0.2, 4, prior='log-uniform')
+      },
+      n_iter=args.iter_bayesian,
+      cv=args.cross_validation,
+      scoring=args.scoring,
+      verbose=1,
+      random_state=args.seed,
+      n_jobs=args.workers,
+      optimizer_kwargs={'n_initial_points': 64, 'initial_point_generator': "grid"}
+   )
+   opt.fit(X_train, y_train)
+   with open(f"{DIR}/opt_results.pkl", 'wb') as f:
+      pickle.dump(opt.cv_results_, f)
+   plot_heatmap(DIR, args.restarts)
 
-For more details, refer to the paper:
-node2vec: Scalable Feature Learning for Networks
-Aditya Grover and Jure Leskovec 
-Knowledge Discovery and Data Mining (KDD), 2016
-'''
+   p = opt.best_params_['p']
+   q = opt.best_params_['q']
+   return p, q
 
-import argparse
-import numpy as np
-import networkx as nx
-import node2vec
-from gensim.models import Word2Vec
+def bayes_opt_restarts(args, X_train, y_train, DIR):
+   opt = BayesSearchCV(
+      Model(p=args.p, q=args.q, r=args.r, d=args.d, l=args.l, \
+            k=args.k, restarts=args.restarts, epsilon=args.epsilon, s=args.s, \
+            weighted=args.weighted, directed=args.directed, epochs=args.epochs, \
+            nodes=args.input, dir_base=None),
+      {
+         'omega':     Real(0.1, 4.0, prior='log-uniform'),
+         'epsilon':   Real(0.001, 0.15, prior='log-uniform')
+      },
+      n_iter=args.iter_bayesian,
+      cv=args.cross_validation,
+      scoring=args.scoring,
+      verbose=1,
+      random_state=args.seed,
+      n_jobs=args.workers,
+      optimizer_kwargs={'n_initial_points': 64, 'initial_point_generator': "grid"}
+   )
+   opt.fit(X_train, y_train)
+   with open(f"{DIR}/opt_results.pkl", 'wb') as f:
+      pickle.dump(opt.cv_results_, f)
+   plot_heatmap(DIR, args.restarts)
 
-def parse_args():
-	'''
-	Parses the node2vec arguments.
-	'''
-	parser = argparse.ArgumentParser(description="Run node2vec.")
+   omega = opt.best_params_['omega']
+   tau = opt.best_params_['tau']
+   return omega, tau
 
-	parser.add_argument('--input', nargs='?', default='graph/karate.edgelist',
-	                    help='Input graph path')
+def evaluate(args, train_X, train_y, test_X, test_y, DIR):
+   dir_out = f"{DIR}/eval"
+   os.mkdir(dir_out)
 
-	parser.add_argument('--output', nargs='?', default='emb/karate.emb',
-	                    help='Embeddings path')
+   with open(f"{dir_out}/best_settings.json", 'w') as f:
+      json.dump(args.__dict__, f, indent=3)
 
-	parser.add_argument('--dimensions', type=int, default=128,
-	                    help='Number of dimensions. Default is 128.')
+   with open(f"{dir_out}/results.csv", 'w') as f_out:
+      f_out.write("F1_macro,F1_micro,accuracy\n")
+      for i in range(args.replications):
+         # Create model
+         m = Model(p=args.p, q=args.q, r=args.r, d=args.d, \
+                   l=args.l, k=args.k, restarts=args.restarts, \
+                   tau=args.tau, omega=args.omega, epsilon=args.epsilon, \
+                   s=args.s, weighted=args.weighted, directed=args.directed, \
+                   epochs=args.epochs, nodes=args.input, dir_base=dir_out, \
+                   partitions=args.partitions)
+         m.fit(train_X, train_y)
 
-	parser.add_argument('--walk-length', type=int, default=80,
-	                    help='Length of walk per source. Default is 80.')
+         pred_y = m.predict(test_X)
 
-	parser.add_argument('--num-walks', type=int, default=10,
-	                    help='Number of walks per source. Default is 10.')
+         f1_macro = f1_score(test_y, pred_y, average="macro")
+         f1_micro = f1_score(test_y, pred_y, average="micro")
+         accuracy = accuracy_score(test_y, pred_y)
 
-	parser.add_argument('--window-size', type=int, default=10,
-                    	help='Context size for optimization. Default is 10.')
-
-	parser.add_argument('--iter', default=1, type=int,
-                      help='Number of epochs in SGD')
-
-	parser.add_argument('--workers', type=int, default=8,
-	                    help='Number of parallel workers. Default is 8.')
-
-	parser.add_argument('--p', type=float, default=1,
-	                    help='Return hyperparameter. Default is 1.')
-
-	parser.add_argument('--q', type=float, default=1,
-	                    help='Inout hyperparameter. Default is 1.')
-
-	parser.add_argument('--weighted', dest='weighted', action='store_true',
-	                    help='Boolean specifying (un)weighted. Default is unweighted.')
-	parser.add_argument('--unweighted', dest='unweighted', action='store_false')
-	parser.set_defaults(weighted=False)
-
-	parser.add_argument('--directed', dest='directed', action='store_true',
-	                    help='Graph is (un)directed. Default is undirected.')
-	parser.add_argument('--undirected', dest='undirected', action='store_false')
-	parser.set_defaults(directed=False)
-
-	return parser.parse_args()
-
-def read_graph():
-	'''
-	Reads the input network in networkx.
-	'''
-	if args.weighted:
-		G = nx.read_edgelist(args.input, nodetype=int, data=(('weight',float),), create_using=nx.DiGraph())
-	else:
-		G = nx.read_edgelist(args.input, nodetype=int, create_using=nx.DiGraph())
-		for edge in G.edges():
-			G[edge[0]][edge[1]]['weight'] = 1
-
-	if not args.directed:
-		G = G.to_undirected()
-
-	return G
-
-def learn_embeddings(walks):
-	'''
-	Learn embeddings by optimizing the Skipgram objective using SGD.
-	'''
-	walks = [map(str, walk) for walk in walks]
-	model = Word2Vec(walks, size=args.dimensions, window=args.window_size, min_count=0, sg=1, workers=args.workers, iter=args.iter)
-	model.save_word2vec_format(args.output)
-	
-	return
-
-def main(args):
-	'''
-	Pipeline for representational learning for all nodes in a graph.
-	'''
-	nx_G = read_graph()
-	G = node2vec.Graph(nx_G, args.directed, args.p, args.q)
-	G.preprocess_transition_probs()
-	walks = G.simulate_walks(args.num_walks, args.walk_length)
-	learn_embeddings(walks)
+         f_out.write(f"{f1_macro},{f1_micro},{accuracy}\n")
 
 if __name__ == "__main__":
-	args = parse_args()
-	main(args)
+   args = parse_args()
+   
+   arg_len = args.partitions
+   q_len = len(args.q)
+   p_len = len(args.p)
+  
+   q_error = "Error: expected q-list to have: " + str(arg_len) + " parameters but got: " + str(q_len) + " parameters!"
+   p_error = "Error: expected p-list to have: " + str(arg_len) + " parameters but got: " + str(p_len) + " parameters!"
+  
+   assert q_len == arg_len, q_error
+   assert p_len == arg_len, p_error
+   assert args.d % arg_len == 0, "Error: dimensions must be divisible by partitions"
+
+   if not os.path.isdir(args.loc_results_dir):
+      os.mkdir(args.loc_results_dir)
+   
+   if args.output is not None:
+      DIR = f"{args.output}"
+   elif args.output_dir_name is not None:
+      DIR = f"{args.loc_results_dir}/{args.output_dir_name}"
+   else:
+      t = datetime.datetime.now()
+      DIR = f"{args.loc_results_dir}/results_{t.day}-{t.month}-{t.year}_{t.hour}-{t.minute}-{t.second}"
+   os.mkdir(DIR)
+   with open(f"{DIR}/cl_args.json", 'w') as f:
+      json.dump(args.__dict__, f, indent=3)
+
+   # Obtain nodes and corresponding labels from dataset
+   X, y = [], []
+   with open(args.labels, 'r') as f_labels:
+      data = f_labels.read()
+      lines = data.split('\n')
+      lines = lines[:-1]
+      for line in lines:
+         xy = line.split('\t')
+         X.append(xy[0])
+         y.append(xy[1])
+   
+   X_train, X_test, y_train, y_test = train_test_split(X, y, train_size=args.train_set)
+
+   if args.bayesian_opt:
+      if args.restarts:  # Optimize omega, epsilon
+         args.omega, args.tau = bayes_opt_restarts(args, X_train, y_train, DIR)
+      else:  # Optimize p and q
+         p, q = bayes_opt_pq(args, X_train, y_train, DIR)
+         args.p[0] = p
+         args.q[0] = q
+         
+   #TODO else:
+   evaluate(args, X_train, y_train, X_test, y_test, DIR)
