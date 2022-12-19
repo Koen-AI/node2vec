@@ -11,7 +11,7 @@ The *node2vec* algorithm learns continuous representations for nodes in any (un)
 ### Basic Usage
 
 #### Example
-To run *node2vec* on Zachary's karate club network, execute the following command from the project home directory:<br/>
+To run *node2vec* on the email-Eu-core dataset, execute the following command from the project home directory:<br/>
 	``python src/main.py --input email-Eu-core.edgelist --labels email-Eu-core.labels --output results-email-Eu-core``
 
 #### Options
@@ -39,7 +39,13 @@ We have added the following parameters to configure the added functionality:
     * ``--q`` now also supports a sequence of floats
 
 #### post processing
-To find the $\lambda$ and/or $p,q$-lists to use for partitions you can use ``post_processing.py``
+To find the $\lambda$ and/or $p,q$-lists to use for partitions you can use ``post_processing.py`` 
+
+#### Example post processing
+To run *post_process* on the email-Eu-core dataset, execute the following command from the project home directory:<br/>
+  ``python src/post_process.py --dir results-email-Eu-core --partitions 4 --read --write``
+To run learn about the options for *post_process* execute the following command from the project home directory:<br/>
+  ``python src/post_process.py --help``
 
 #### Input
 The supported input format is an edgelist:
