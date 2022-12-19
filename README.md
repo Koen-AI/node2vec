@@ -29,14 +29,17 @@ We have added the following parameters to configure the added functionality:
     * ``--replications`` to specify the number of replications to evaluate hyperparameter configuration
   - To configure the restart method:
     * ``--restarts`` to toggle the restart functionality
-    * ``--tau`` to set the tau parameter
-    * ``--omega`` to set the omega parameter
-    * ``--epsilon`` to set the varepsilon parameter
-    * ``--s`` to set the s parameter
+    * ``--tau`` to set the $tau$ parameter
+    * ``--omega`` to set the $\omega$ parameter
+    * ``--epsilon`` to set the $\varepsilon$ parameter
+    * ``--s`` to set the $s$ parameter
   - To configure the ensemble method:
     * ``--partitions`` to define how many ensembles you want
     * ``--p`` now also supports a sequence of floats
     * ``--q`` now also supports a sequence of floats
+
+#### post processing
+To find the $\lambda$ and/or $p,q$-lists to use for partitions you can use ``post_processing.py``
 
 #### Input
 The supported input format is an edgelist:
