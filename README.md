@@ -1,12 +1,9 @@
 # node2vec
 
-This repository provides a reference implementation of *node2vec* as described in the paper:<br>
-> node2vec: Scalable Feature Learning for Networks.<br>
-> Aditya Grover and Jure Leskovec.<br>
-> Knowledge Discovery and Data Mining, 2016.<br>
-> <Insert paper link>
+This repository provides an implementation of *node2vec* extended with restart probabilities and ensembles:<br>
+The extensions are added by Koen Bouwman and Jerry Schonenberg<br>
+*node2vec* is introduced by Aditya Grover and Jure Leskovec.<br>
 
-The *node2vec* algorithm learns continuous representations for nodes in any (un)directed, (un)weighted graph. Please check the [project page](https://snap.stanford.edu/node2vec/) for more details. 
 
 ### Basic Usage
 
@@ -74,9 +71,3 @@ If you find *node2vec* useful for your research, please consider citing the foll
 	 year = {2016}
 	}
 
-
-### Miscellaneous
-
-Please send any questions you might have about the code and/or the algorithm to <adityag@cs.stanford.edu>.
-
-*Note:* This is only a reference implementation of the *node2vec* algorithm and could benefit from several performance enhancement schemes, some of which are discussed in the paper.
